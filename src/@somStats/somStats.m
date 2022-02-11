@@ -13,7 +13,8 @@ classdef somStats < handle
     trainingIndex = []
     errors        = struct('topologicError',    [], ...
                            'quantizationError', [], ...
-                           'neuronUtilization', [])
+                           'neuronUtilization', [], ...
+                           'prodErr',           [])
     trainingTime  = [];
   end
   
@@ -31,30 +32,6 @@ classdef somStats < handle
       end
     end
     
-    function bol = lt(obj,other)
-      
-      bol = false;
-      [ehIgual, equalParam] = objEquality(obj, other);
-      if ehIgual & obj.trainingIndex ~= other.trainingIndex
-        bol = obj.trainingIndex < other.trainingIndex;
-      elseif ~ehIgual
-        if ~isTheSameSize(obj, other)
-          bol = obj.netAttributs.size < other.netAttributs.size;
-        elseif ~isTheSameEpoch(obj,other)
-          bol = obj.netAttributs.epochs < other.netAttributs.epochs;
-        
-        elseif ~isTheSameTau(obj, other)
-          bol = obj.netAttributs.tau < other.netAttributs.tau;
-        end
-      end
-    end
-
-    function bol = eq(obj, other)
-%   Overload the equal == operator 
-
-      bol = objEquality(obj, other);
-    end
-
     function [net, tr] = loadNet(obj)
 %   LOADNET load the network in path/netName
 %   It will load the net and te tr variables 
@@ -100,6 +77,41 @@ classdef somStats < handle
                     'Quantization error', fig)
     end 
     
+    function plotSomHits(obj)
+      [net, ~] = loadNet(obj);
+      figure;
+      Input = loadInput(obj);
+      plotsomhits(net,Input);
+    end
+
+    function plotSomNd(obj);
+      [net, ~] = loadNet(obj);
+      figure;
+      plotsomnd(net);
+    end
+
+    function plotSomTarget(obj)
+      [net, ~] = loadNet(obj);
+      Input = loadInput(obj);
+      Target = loadTarget(obj);
+      output = net(Input);
+
+      for n = 1 : length(Target)
+        temp = find(Target(:,n));
+        if length(temp) == 1
+          Targ(n) = temp;
+        else
+          Targ(n) = sum(temp) + 1;
+        end
+        clear temp
+      end
+      
+      for n = 1 : size(output,1)
+        out{n} = unique(Targ(find(output(n,:))));
+      end
+
+
+    end
 
   end
 
@@ -137,13 +149,89 @@ classdef somStats < handle
     end
     
     function setErros(obj)
-      [~, tr] = obj.loadNet();
+      [net, tr] = obj.loadNet();
+      Input = loadInput(obj);
       obj.errors.topologicError = tr.Te;
       obj.errors.quantizationError = tr.QE;
-      if isfield(tr,'Nu') obj.errors.neuronUtilization = tr.Nu; end
+      if isfield(tr,'Nu') 
+        obj.errors.neuronUtilization = tr.Nu; 
+      else
+        obj.errors.neuronUtilization = neuronUtilization(net, Input, []);
+      end
       obj.trainingTime = tr.time(end);
+      obj.errors.prodErr = sqrt(tr.Te(end)^2+tr.QE(end)^2+...
+                                (1-obj.errors.neuronUtilization)^2);
     end
+
+    function Input = loadInput(obj)
+      Input = loadParam(obj, 'Input');
+    end
+    
+    function Target = loadTarget(obj)
+      Target = loadParam(obj, 'TargetJunto');
+    end
+
+    function out = loadParam(obj, varName)
+      path = split(obj.path, filesep);
+      var = load(fullfile(path{1},path{2},path{3}, [varName '.mat']));
+      out = var.(varName);
+    end
+    
+
   end
+
+  
+  methods
+    
+    function bol = lt(obj,other)
+      
+%       bol = false;
+%       [ehIgual, equalParam] = objEquality(obj, other);
+%       if ehIgual & obj.trainingIndex ~= other.trainingIndex
+%         bol = obj.trainingIndex < other.trainingIndex;
+%       elseif ~ehIgual
+%         if ~isTheSameSize(obj, other)
+%           bol = obj.netAttributs.size < other.netAttributs.size;
+%         elseif ~isTheSameEpoch(obj,other)
+%           bol = obj.netAttributs.epochs < other.netAttributs.epochs;
+%         
+%         elseif ~isTheSameTau(obj, other)
+%           bol = obj.netAttributs.tau < other.netAttributs.tau;
+%         end
+%       end
+      bol = paramSum(obj) < paramSum(other);
+    end
+    
+    function bol = gt(obj,other)
+%       if obj == other
+%         bol = false;
+%       else
+%         bol = ~(obj < other);
+%       end
+      bol = paramSum(obj) > paramSum(other);
+    end
+
+    function bol = eq(obj, other)
+%   Overload the equal == operator 
+      
+%       bol = objEquality(obj, other);
+      bol = paramSum(obj) == paramSum(other);
+    end
+    
+    function bol = le(obj, other)
+      bol = paramSum(obj) <= paramSum(other);
+    end
+    
+    function bol = ge(obj, other)
+      bol = paramSum(obj) >= paramSum(other);
+    end
+
+    function bol = ne(obj, other)
+      bol = paramSum(obj) ~= paramSum(other);
+    end
+
+  end
+
 end
 
 
@@ -226,8 +314,19 @@ function varargout = objEquality(obj, other)
       end
 end
 
+function out = paramSum(obj)
+  att = obj.netAttributs;
+  out = sum([obj.trainingIndex att.size att.dimensions att.epochs att.tau]);
+end
 
-
+function U = neuronUtilization(net, Input, IND)
+% FATORDEUTILIZACAO fator de neurônios excitados.
+% 
+  if isempty(IND) IND = 1 : size(Input,2); end
+  output = net(Input(:,IND));
+  U = length(find(sum(output') ~= 0))/size(output,1);
+  
+end
 
 
 
